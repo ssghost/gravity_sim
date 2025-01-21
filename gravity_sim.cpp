@@ -87,7 +87,7 @@ class Object{
                 float dx = obj2.GetCoord()[0] - this->position[0];
                 float dy = obj2.GetCoord()[1] - this->position[1];
                 float distance = sqrt(dx*dx + dy*dy);
-                if (distance < this->radius + obj2.radius){
+                if (this->position[0] < obj2.GetCoord()[0] + this->radius && this->position[0] > obj2.GetCoord()[0] - this->radius){
                     obj2.Velocity(1, -1);
                     this->velocity[1] *= -1;
                 }
