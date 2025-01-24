@@ -11,7 +11,7 @@ int screenHeight = 600;
 const char* title = "mass_sim";
 const double frameDuration = 1.0 / 60.0;
 float G = 6.67430e-11;
-float initMass = 5.0f;
+float initMass = 500000.0f;
 
 float ballr = 10;
 
@@ -26,12 +26,13 @@ class Object{
         std::vector<float> hue = {1.0f, 0.0f, 0.0f, 1.0f};
         float mass;
         float density = 0.08375;  // kg / m^3  HYDROGEN
-        float radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f));
+        float radius;
 
         Object(std::vector<float> initPosition, std::vector<float> initVelocity, float mass){
             this->position = initPosition;
             this->velocity = initVelocity;
             this->mass = mass;
+            this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 150.0f;
         }
 
         void UpdatePos(){
@@ -50,9 +51,8 @@ class Object{
             return xy;
         }
         void Draw(){
-            float volume = this->mass/this->density;
-            float radius = pow(((3 * volume)/(4 * 3.14159265359)), (1.0f/3.0f));
-            std::cout<<radius<<std::endl;
+            float radius = this->radius;
+            std::cout<<"Draw radius: "<<radius<<std::endl;
             float x = this->position[0];
             float y = this->position[1];
             glColor4f(this->hue[0], this->hue[1], this->hue[2], this->hue[3]);
@@ -71,7 +71,7 @@ class Object{
             std::cout<<"Xpos: "<<this->position[0]<< " Ypos: "<<this->position[1]<<std::endl<<"Xvel: "<<this->velocity[0]<< " Yvel: "<<this->velocity[1]<<std::endl<<std::endl;
         } 
         void CheckBoundry(int bottom, int top, int left, int right){
-            float radius = pow(((3 * (this->mass/this->density))/(4 * 3.14159265359)), (1.0f/3.0f));
+            float radius = this->radius;
             if (this->position[1] < bottom + radius || this->position[1]>top-radius){
                 this->position[1] = this->position[1] < bottom+radius ? bottom+radius : top-radius;
                 this->velocity[1] *= -0.8f;
@@ -87,9 +87,10 @@ class Object{
                 float dx = obj2.GetCoord()[0] - this->position[0];
                 float dy = obj2.GetCoord()[1] - this->position[1];
                 float distance = sqrt(dx*dx + dy*dy);
-                if (this->position[0] < obj2.GetCoord()[0] + this->radius && this->position[0] > obj2.GetCoord()[0] - this->radius){
-                    obj2.Velocity(1, -1);
-                    this->velocity[1] *= -1;
+                if (distance < (this->radius + obj2.radius) && distance != 0){
+                    std::vector<float> direction = {(obj2.GetCoord()[0] - this->position[0]) / distance, (obj2.GetCoord()[1] - this->position[1]) / distance};
+                    this->velocity[0] = -direction[0];
+                    this->velocity[1] = -direction[1];
                 }
             }
         }
@@ -102,7 +103,7 @@ class Object{
 
 std::vector<float> initVelocity = {0.0f, 0.0f};
 std::vector<Object> objs = {
-        Object({0.0f, 0.0f}, initVelocity, initMass),
+        //Object({0.0f, 0.0f}, initVelocity, initMass),
         //Object({800.0f, 600.0f}, initVelocity),
     };
 GLFWwindow* StartGLU(int screenWidth, int screenHeight, const char* title);
@@ -128,14 +129,19 @@ int main(void)
             obj.UpdatePos();
             // obj gravity
             for(auto& obj2 : objs){
-                float dx = (obj2.GetCoord()[0] - obj.GetCoord()[0]);
-                float dy = (obj2.GetCoord()[1] - obj.GetCoord()[1]);
-                float distance = std::sqrt(dx*dx+dy*dy);
-                if (distance != 0){
-                    std::vector<float> direction = {(obj2.GetCoord()[0] - obj.GetCoord()[0]) / distance, (obj2.GetCoord()[1] - obj.GetCoord()[1]) / distance};
-                    //std::cout<<direction[0]<< ' '<< direction[1]<<std::endl;
-                    
-                    obj.accelerate(direction[0], direction[1]);
+                if(!obj2.Initalizing && !obj.Initalizing && &obj2 != &obj){
+                    float dx = (obj2.GetCoord()[0] - obj.GetCoord()[0]);
+                    float dy = (obj2.GetCoord()[1] - obj.GetCoord()[1]);
+                    float distance = std::sqrt(dx*dx+dy*dy);
+                    if (distance != 0){
+                        std::vector<float> direction = {(obj2.GetCoord()[0] - obj.GetCoord()[0]) / distance, (obj2.GetCoord()[1] - obj.GetCoord()[1]) / distance};
+                        float magnitute = sqrt((direction[0]*direction[0])+(direction[1]*direction[1]));
+                        float Gforce = (G*obj.mass*obj2.mass) / (distance*distance);
+                        std::vector<float> acc = {(direction[0] / magnitute * Gforce), (direction[1] / magnitute * Gforce)};
+                        std::cout<<"Gforce: "<<Gforce<<std::endl;
+                        std::cout<<"Radius: "<<obj.radius<<std::endl;
+                        obj.accelerate(direction[0], direction[1]);
+                    }
                 }
             }
             // gravity
@@ -156,11 +162,10 @@ int main(void)
                     glVertex2d(xpos, ypos);
                     glVertex2d(obj.GetCoord()[0], obj.GetCoord()[1]);
 
-                    float radius = pow(((3 * (obj.mass/obj.density))/(4 * 3.14159265359)), (1.0f/3.0f));
-
                     // init mass 
-                    if (xpos < obj.GetCoord()[0] + radius && xpos > obj.GetCoord()[0] - radius && ypos < obj.GetCoord()[1] + radius && ypos > obj.GetCoord()[1] - radius){
+                    if (xpos < obj.GetCoord()[0] + obj.radius && xpos > obj.GetCoord()[0] - obj.radius && ypos < obj.GetCoord()[1] + obj.radius && ypos > obj.GetCoord()[1] - obj.radius){
                         obj.mass *= 1.05;
+                        obj.radius = pow(((3 * obj.mass/obj.density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 100;
                     }
                     glEnd();
             }
@@ -180,7 +185,7 @@ int main(void)
 
             }
             obj.CheckBoundry(0, screenHeight, 0, screenWidth);
-            obj.CheckCollision(objs);
+            //obj.CheckCollision(objs);
 
         }
         
