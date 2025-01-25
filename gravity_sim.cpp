@@ -8,10 +8,19 @@
 // vars
 int screenWidth = 800;
 int screenHeight = 600;
-const char* title = "mass_sim";
+const char* title = "mass_sim1";
 const double frameDuration = 1.0 / 60.0;
-float G = 6.67430e-11;
-float initMass = 5.0f;
+
+float cameraX = 0.0f, cameraY = 0.0f;
+float zoomLevel = 1.0f;
+double lastMouseX, lastMouseY; 
+bool dragging = false;
+
+const double G = 6.674e-11; // m^3 kg^-1 s^-2
+float initMass = 5.0f * pow(10, 20);
+
+std::vector<float> LiveHue = {1.0f, 0.0f, 0.0f, 1.0f};
+bool pause=false;
 
 float ballr = 10;
 
@@ -25,19 +34,24 @@ class Object{
         bool Launched = false;
         std::vector<float> hue = {1.0f, 0.0f, 0.0f, 1.0f};
         float mass;
-        float density = 0.08375;  // kg / m^3  HYDROGEN
-        float radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f));
+        float density = 3344;  // kg / m^3  HYDROGEN
+        float radius;
+        std::vector<float> LastPos = position;
 
         Object(std::vector<float> initPosition, std::vector<float> initVelocity, float mass){
             this->position = initPosition;
             this->velocity = initVelocity;
             this->mass = mass;
+            this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 100000;
         }
-
         void UpdatePos(){
             this->position[0] += this->velocity[0] / 94;
             this->position[1] += this->velocity[1] / 94;
         }
+        void UpdateRadius(){
+            this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 100000;
+        }
+        
         void Velocity(float x, float y){
             this->velocity[0] *=x;
             this->velocity[1] *= y;
@@ -49,10 +63,9 @@ class Object{
             std::vector<float> xy = {this->position[0], this->position[1]};
             return xy;
         }
+        
         void Draw(){
-            float volume = this->mass/this->density;
-            float radius = pow(((3 * volume)/(4 * 3.14159265359)), (1.0f/3.0f));
-            std::cout<<radius<<std::endl;
+            float radius = this->radius;
             float x = this->position[0];
             float y = this->position[1];
             glColor4f(this->hue[0], this->hue[1], this->hue[2], this->hue[3]);
@@ -66,12 +79,9 @@ class Object{
                 glVertex2f(x + dx, y + dy);
             }
              glEnd();
-        };
-        void GetData() {
-            std::cout<<"Xpos: "<<this->position[0]<< " Ypos: "<<this->position[1]<<std::endl<<"Xvel: "<<this->velocity[0]<< " Yvel: "<<this->velocity[1]<<std::endl<<std::endl;
-        } 
+        }; 
         void CheckBoundry(int bottom, int top, int left, int right){
-            float radius = pow(((3 * (this->mass/this->density))/(4 * 3.14159265359)), (1.0f/3.0f));
+            float radius = this->radius;
             if (this->position[1] < bottom + radius || this->position[1]>top-radius){
                 this->position[1] = this->position[1] < bottom+radius ? bottom+radius : top-radius;
                 this->velocity[1] *= -0.8f;
@@ -87,28 +97,36 @@ class Object{
                 float dx = obj2.GetCoord()[0] - this->position[0];
                 float dy = obj2.GetCoord()[1] - this->position[1];
                 float distance = sqrt(dx*dx + dy*dy);
-                if (distance < this->radius + obj2.radius){
-                    obj2.Velocity(1, -1);
-                    this->velocity[1] *= -1;
+                if (distance < (this->radius + obj2.radius) && distance != 0){
+                    std::vector<float> direction = {(obj2.GetCoord()[0] - this->position[0]) / distance, (obj2.GetCoord()[1] - this->position[1]) / distance};
+                    this->velocity[0],this->velocity[1] = 0;
+
                 }
             }
         }
+        void Translate(int x, int y){
+            this->position[0] = x;
+            this->position[1] = y;
+        }
 
         void accelerate(float x, float y){
-            this->velocity[0] += x;
-            this->velocity[1] += y;
+            this->velocity[0] += x / 96;
+            this->velocity[1] += y / 96;
         }
 };
 
 std::vector<float> initVelocity = {0.0f, 0.0f};
 std::vector<Object> objs = {
-        Object({0.0f, 0.0f}, initVelocity, initMass),
+        //Object({0.0f, 0.0f}, initVelocity, initMass),
         //Object({800.0f, 600.0f}, initVelocity),
     };
 GLFWwindow* StartGLU(int screenWidth, int screenHeight, const char* title);
+void UpdateGLU();
 void LiveTitle(GLFWwindow* window, double& mouseX, double& mouseY);
 void glfwGetCursorPos(GLFWwindow* window, double* xpos, double* ypos);
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 
 int main(void)
 {
@@ -118,22 +136,37 @@ int main(void)
     while (!glfwWindowShouldClose(window))
     {
         glClear(GL_COLOR_BUFFER_BIT);
+        //UpdateGLU();
 
         glfwSetMouseButtonCallback(window, mouseButtonCallback);
+        glfwSetKeyCallback(window, keyCallback);
+
         LiveTitle(window, mouseX, mouseY);
 
         for(auto& obj : objs){
             obj.Draw();
             //obj.GetData();
-            obj.UpdatePos();
+            if(!pause){
+                obj.UpdatePos();
+            }
+            // obj gravity
             for(auto& obj2 : objs){
-                float dx = (obj2.GetCoord()[0] - obj.GetCoord()[0]);
-                float dy = (obj2.GetCoord()[1] - obj.GetCoord()[1]);
-                float distance = std::sqrt(dx*dx+dy*dy);
-                if (distance != 0){
-                    std::vector<float> direction = {(obj2.GetCoord()[0] - obj.GetCoord()[0]) / distance, (obj2.GetCoord()[1] - obj.GetCoord()[1]) / distance};
-                    //std::cout<<direction[0]<< ' '<< direction[1]<<std::endl;
-                    obj.accelerate(direction[0], direction[1]);
+                if(!obj2.Initalizing && !obj.Initalizing && &obj2 != &obj){
+                    float dx = obj2.GetCoord()[0] - obj.GetCoord()[0];
+                    float dy = obj2.GetCoord()[1] - obj.GetCoord()[1];
+                    float distance = std::sqrt(dx * dx + dy * dy);
+
+                    if (distance > 1e-6) { // Avoid very small distances
+                        std::vector<float> direction = {dx / distance, dy / distance};
+                        const double G = 6.674e-11; // Gravitational constant
+                        distance *= 1000;
+                        double Gforce = (G * obj.mass * obj2.mass) / (distance * distance);
+
+                        float acc1 = Gforce / obj.mass;
+                        float acc2 = Gforce / obj2.mass;
+                        std::vector<float> acc = {direction[0] * acc1, direction[1]*acc1};
+                        obj.accelerate(acc[0], acc[1]);
+                    }
                 }
             }
             // gravity
@@ -146,6 +179,8 @@ int main(void)
                     glfwGetCursorPos(window, &xpos, &ypos);
                     ypos = screenHeight - ypos;
                     obj.Velocity(0, 0);
+                    obj.hue = {LiveHue[0], LiveHue[1], LiveHue[2], LiveHue[3]};
+                    std::cout<<obj.hue[0]<<", "<<obj.hue[1]<<", "<<obj.hue[2]<<", "<<obj.hue[2]<<std::endl;
                     // target line
                     glColor4f(1.0f, 0.4f, 0.4f, 0.2f);
                     glLineWidth(2.0f);
@@ -154,11 +189,10 @@ int main(void)
                     glVertex2d(xpos, ypos);
                     glVertex2d(obj.GetCoord()[0], obj.GetCoord()[1]);
 
-                    float radius = pow(((3 * (obj.mass/obj.density))/(4 * 3.14159265359)), (1.0f/3.0f));
-
                     // init mass 
-                    if (xpos < obj.GetCoord()[0] + radius && xpos > obj.GetCoord()[0] - radius && ypos < obj.GetCoord()[1] + radius && ypos > obj.GetCoord()[1] - radius){
+                    if (xpos < obj.GetCoord()[0] + obj.radius && xpos > obj.GetCoord()[0] - obj.radius && ypos < obj.GetCoord()[1] + obj.radius && ypos > obj.GetCoord()[1] - obj.radius){
                         obj.mass *= 1.05;
+                        obj.UpdateRadius();
                     }
                     glEnd();
             }
@@ -177,7 +211,22 @@ int main(void)
                 }
 
             }
-            obj.CheckBoundry(0, screenHeight, 0, screenWidth);
+            if(dragging){
+                double xpos, ypos;
+                glfwGetCursorPos(window, &xpos, &ypos);
+                ypos = screenHeight - ypos;
+
+                float dx = xpos - lastMouseX;
+                float dy = ypos - lastMouseY;
+                
+                for (auto& obj : objs) {
+                    obj.Translate(obj.GetCoord()[0] + dx, obj.GetCoord()[1] + dy);
+                }
+
+                lastMouseX = xpos;
+                lastMouseY = ypos;
+            }
+            //obj.CheckBoundry(0, screenHeight, 0, screenWidth);
             obj.CheckCollision(objs);
 
         }
@@ -206,7 +255,66 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
         }
 
     }
+    if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
+        glfwGetCursorPos(window, &lastMouseX, &lastMouseY);
+        lastMouseY = screenHeight - lastMouseY; // Invert Y-axis to match OpenGL coordinates
+        dragging = true;
+    }
+    if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_RELEASE) {
+        dragging = false;
+    }
 }
+void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    // Check for specific key actions
+    if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+        pause = true;
+    } else if (key == GLFW_KEY_SPACE && action == GLFW_RELEASE){
+        pause = false;
+    } else if (key == GLFW_KEY_R && action == GLFW_REPEAT) {
+         if (mods & GLFW_MOD_SHIFT) {
+            LiveHue[0] -= 0.1;
+        } else {
+            LiveHue[0] += 0.1;
+        }
+    } else if (key == GLFW_KEY_G && action == GLFW_REPEAT) {
+        if (mods & GLFW_MOD_SHIFT) {
+            LiveHue[1] -= 0.1;
+        } else {
+            LiveHue[1] += 0.1;
+        }
+    } else if (key == GLFW_KEY_B && action == GLFW_REPEAT) {
+         if (mods & GLFW_MOD_SHIFT) {
+            LiveHue[2] -= 0.1;
+        } else {
+            LiveHue[2] += 0.1;
+        }
+    } else if (key == GLFW_KEY_C && action == GLFW_PRESS) {
+        objs = {};
+    }
+
+    // Example: Close the window when the Escape key is pressed
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+    }
+}
+void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+    float zoomFactor = 0.1f;
+    if (yoffset > 0) {
+        zoomLevel *= (1.0f - zoomFactor);
+    } else if (yoffset < 0) {
+        zoomLevel *= (1.0f + zoomFactor);
+    }
+
+    // Clamp zoom level to prevent inverting or excessive zoom
+    zoomLevel = std::max(0.1f, std::min(zoomLevel, 10.0f));
+}
+void LiveTitle(GLFWwindow* window, double& mouseX, double& mouseY){
+    glfwGetCursorPos(window, &mouseX, &mouseY);
+    mouseY = screenHeight - mouseY; // Invert Y-axis to match OpenGL coordinates
+    std::string windowTitle = std::string(title) + " | Mouse X: " + std::to_string(mouseX) + " Y: " + std::to_string(mouseY);
+    glfwSetWindowTitle(window, windowTitle.c_str());
+};
+
 GLFWwindow* StartGLU(int screenWidth, int screenHeight, const char* title){
     if (!glfwInit()){
         std::cerr << "Failed to initialize GLFW." << std::endl;
@@ -227,9 +335,14 @@ GLFWwindow* StartGLU(int screenWidth, int screenHeight, const char* title){
 
     return window;
 }
-void LiveTitle(GLFWwindow* window, double& mouseX, double& mouseY){
-    glfwGetCursorPos(window, &mouseX, &mouseY);
-    mouseY = screenHeight - mouseY; // Invert Y-axis to match OpenGL coordinates
-    std::string windowTitle = std::string(title) + " | Mouse X: " + std::to_string(mouseX) + " Y: " + std::to_string(mouseY);
-    glfwSetWindowTitle(window, windowTitle.c_str());
-};
+void UpdateGLU(){
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(cameraX - screenWidth / 2 * zoomLevel, 
+            cameraX + screenWidth / 2 * zoomLevel, 
+            cameraY - screenHeight / 2 * zoomLevel, 
+            cameraY + screenHeight / 2 * zoomLevel, 
+            -1.0, 1.0);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+}
