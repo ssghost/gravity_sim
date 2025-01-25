@@ -1,3 +1,4 @@
+#include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <cmath>
 #include <iostream>
@@ -8,7 +9,7 @@
 // vars
 int screenWidth = 800;
 int screenHeight = 600;
-const char* title = "mass_sim1";
+const char* title = "mass_simboby";
 const double frameDuration = 1.0 / 60.0;
 
 float cameraX = 0.0f, cameraY = 0.0f;
@@ -327,10 +328,15 @@ GLFWwindow* StartGLU(int screenWidth, int screenHeight, const char* title){
         glfwTerminate();
         return nullptr;
     }
-    // Make the window's context current
     glfwMakeContextCurrent(window);
 
-    // Set up an orthographic projection
+    glewExperimental = GL_TRUE;
+    if (glewInit() != GLEW_OK) {
+        std::cerr << "Failed to initialize GLEW." << std::endl;
+        glfwTerminate();
+        return nullptr;
+    }
+
     glOrtho(0.0f, screenWidth, 0.0f, screenHeight, -1.0f, 1.0f);
 
     return window;
