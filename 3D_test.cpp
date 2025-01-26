@@ -5,7 +5,6 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 
-
 const char* vertexShaderSource = R"glsl(
     #version 330 core
     layout (location = 0) in vec3 aPos;
@@ -45,12 +44,7 @@ int main() {
     CreateVBOVAO(VAO, VBO, vertices, sizeof(vertices) / sizeof(float));
 
     // Set up projection matrix
-    glm::mat4 projection = glm::perspective(
-        glm::radians(45.0f), // Field of view
-        800.0f / 600.0f,     // Aspect ratio
-        0.1f,                // Near clipping plane
-        100.0f               // Far clipping plane
-    );
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
 
     // Pass the projection matrix to the shader
     GLint projectionLoc = glGetUniformLocation(shaderProgram, "projection");
@@ -110,6 +104,7 @@ GLFWwindow* StartGLU() {
     }
     glfwMakeContextCurrent(window);
 
+    // Initialize GLEW
     glewExperimental = GL_TRUE;
     if (glewInit() != GLEW_OK) {
         std::cerr << "Failed to initialize GLEW." << std::endl;
@@ -120,7 +115,8 @@ GLFWwindow* StartGLU() {
     // Enable depth testing
     glEnable(GL_DEPTH_TEST);
 
-    glViewport(0, 0, 800, 600); // Set the viewport to match the window size
+    // Set the viewport
+    glViewport(0, 0, 800, 600);
 
     return window;
 }
@@ -169,20 +165,21 @@ GLuint CreateShaderProgram(const char* vertexSource, const char* fragmentSource)
 
     return shaderProgram;
 }
-void CreateVBOVAO(GLuint& VAO, GLuint& VBO, const float* vertices, size_t vertexCount){
-    // VAO
+
+void CreateVBOVAO(GLuint& VAO, GLuint& VBO, const float* vertices, size_t vertexCount) {
+    // Generate and bind VAO
     glGenVertexArrays(1, &VAO);
     glBindVertexArray(VAO);
-    
-    // VBO
+
+    // Generate and bind VBO
     glGenBuffers(1, &VBO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER, vertexCount * sizeof(float), vertices, GL_STATIC_DRAW);
 
-    // vertex attribute pointers
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(float), (void*)0);
+    // Set up vertex attribute pointers
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
+    // Unbind VAO (optional but good practice)
     glBindVertexArray(0);
-
 }
