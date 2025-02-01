@@ -10,11 +10,17 @@ const char* vertexShaderSource = R"glsl(#version 330 core
 layout(location=0)in vec3 aPos;uniform mat4 model;uniform mat4 view;uniform mat4 projection;
 void main(){gl_Position=projection*view*model*vec4(aPos,1.0);})glsl";
 
-const char* fragmentShaderSource = R"glsl(#version 330 core
-out vec4 FragColor;void main(){FragColor=vec4(1.0,0.5,0.2,1.0);})glsl";
-
+const char* fragmentShaderSource = R"glsl(
+#version 330 core
+out vec4 FragColor;
+uniform vec4 objectColor; // Add this uniform
+void main() {
+    FragColor = objectColor; // Use the uniform color
+}
+)glsl";
 
 bool running = true;
+bool pause = false;
 glm::vec3 cameraPos   = glm::vec3(0.0f, 0.0f,  1.0f);
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
 glm::vec3 cameraUp    = glm::vec3(0.0f, 1.0f,  0.0f);
@@ -24,17 +30,23 @@ float pitch =0.0;
 float deltaTime = 0.0;
 float lastFrame = 0.0;
 
-float radius = 1;
-const double G = 6.674e-11; // m^3 kg^-1 s^-2
-float initMass = 5.0f * pow(10, 20);
+const double G = 6.6743e-11; // m^3 kg^-1 s^-2
+float initMass = 5.0f * pow(10, 20) / 5;
 
 GLFWwindow* StartGLU();
 GLuint CreateShaderProgram(const char* vertexSource, const char* fragmentSource);
 void CreateVBOVAO(GLuint& VAO, GLuint& VBO, const float* vertices, size_t vertexCount);
 void UpdateCam(GLuint shaderProgram, glm::vec3 cameraPos);
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 glm::vec3 sphericalToCartesian(float r, float theta, float phi);
+
+std::vector<float> CreateGridVertices(float size, int divisions);
+void DrawGrid(GLuint shaderProgram, GLuint gridVAO, size_t vertexCount);
+
 
 class Object {
     public:
@@ -42,12 +54,23 @@ class Object {
         glm::vec3 position = glm::vec3(400, 300, 0);
         glm::vec3 velocity = glm::vec3(0, 0, 0);
         size_t vertexCount;
+        glm::vec4 color = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+
+        bool Initalizing = false;
+        bool Launched = false;
+        bool target = false;
+
+        float mass;
+        float density = 3344;  // kg / m^3  HYDROGEN
+        float radius;
 
         glm::vec3 LastPos = position;
 
-        Object(glm::vec3 initPosition, glm::vec3 initVelocity, float mass) {
+        Object(glm::vec3 initPosition, glm::vec3 initVelocity, float mass) {   
             this->position = initPosition;
             this->velocity = initVelocity;
+            this->mass = mass;
+            this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 100000;
 
             // Generate vertices (centered at origin)
             std::vector<float> vertices = Draw();
@@ -86,32 +109,70 @@ class Object {
             }
             return vertices;
         }
-
-        void accelerate(float x, float y){
+        
+        void UpdatePos(){
+            this->position[0] += this->velocity[0] / 94;
+            this->position[1] += this->velocity[1] / 94;
+            this->position[2] += this->velocity[2] / 94;
+            this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 100000;
+        }
+        void UpdateVertices() {
+            // Generate new vertices with current radius
+            std::vector<float> vertices = Draw();
+            
+            // Update the VBO with new vertex data
+            glBindBuffer(GL_ARRAY_BUFFER, VBO);
+            glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+        }
+        glm::vec3 GetPos(){
+            return this->position;
+        }
+        void accelerate(float x, float y, float z){
             this->velocity[0] += x / 96;
             this->velocity[1] += y / 96;
+            this->velocity[2] += z / 96;
+        }
+        glm::vec3 CheckCollision(const Object& other) {
+            float dx = other.position[0] - this->position[0];
+            float dy = other.position[1] - this->position[1];
+            float dz = other.position[2] - this->position[2];
+            float distance = std::pow(dx*dx + dy*dy + dz*dz, (1.0f/3.0f));
+
+            return glm::vec3(0, 0, 0);
         }
 };
+std::vector<Object> objs = {};
+
+GLuint gridVAO, gridVBO;
+std::vector<float> gridVertices = CreateGridVertices(200.0f, 5); // 100x100 grid with 10 divisions
+
 
 int main() {
     GLFWwindow* window = StartGLU();
     GLuint shaderProgram = CreateShaderProgram(vertexShaderSource, fragmentShaderSource);
+
     GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
+    GLint objectColorLoc = glGetUniformLocation(shaderProgram, "objectColor");
     glUseProgram(shaderProgram);
 
     glfwSetCursorPosCallback(window, mouse_callback);
+    glfwSetScrollCallback(window, scroll_callback);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     //projection matrix
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 1000.0f);
     GLint projectionLoc = glGetUniformLocation(shaderProgram, "projection");
     glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-    cameraPos = glm::vec3(0.0f, 0.0f,  5.0f);
+    cameraPos = glm::vec3(0.0f, 50.0f,  250.0f);
 
     
-    std::vector<Object> objs = {
-        Object(glm::vec3(0, 5, 0), glm::vec3(0, 0, 0), initMass), 
+    objs = {
+        Object(glm::vec3(0, -10, 5), glm::vec3(0, 0, 0), initMass*5),
+        Object(glm::vec3(0, 10, -5), glm::vec3(0, 0, 0), initMass*5),
+
     };
+
+    CreateVBOVAO(gridVAO, gridVBO, gridVertices.data(), gridVertices.size());
 
     while (!glfwWindowShouldClose(window) && running == true) {
         float currentFrame = glfwGetTime();
@@ -121,23 +182,76 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glfwSetKeyCallback(window, keyCallback);
+        glfwSetMouseButtonCallback(window, mouseButtonCallback);
         UpdateCam(shaderProgram, cameraPos);
+
+        // Draw the grid
+        glUseProgram(shaderProgram);
+        glUniform4f(objectColorLoc, 1.0f, 1.0f, 1.0f, 0.25f); // White color with 50% transparency for the grid
+        DrawGrid(shaderProgram, gridVAO, gridVertices.size());
 
         // Draw the triangle
         for(auto& obj : objs) {
+            glUniform4f(objectColorLoc, obj.color.r, obj.color.g, obj.color.b, obj.color.a);
+
+            for(auto& obj2 : objs){
+                if(&obj2 != &obj && !obj.Initalizing && !obj2.Initalizing){
+                    float dx = obj2.GetPos()[0] - obj.GetPos()[0];
+                    float dy = obj2.GetPos()[1] - obj.GetPos()[1];
+                    float dz = obj2.GetPos()[2] - obj.GetPos()[2];
+                    float distance = sqrt(dx * dx + dy * dy + dz * dz);
+
+                    if (distance > 0) {
+                        std::vector<float> direction = {dx / distance, dy / distance, dz / distance};
+                        distance *= 1000;
+                        double Gforce = (G * obj.mass * obj2.mass) / (distance * distance);
+                        if(distance <= (obj.radius+obj2.radius)){
+                            Gforce = 0.0f;
+                        }
+
+                        float acc1 = Gforce / obj.mass;
+                        std::vector<float> acc = {direction[0] * acc1, direction[1]*acc1, direction[2]*acc1};
+                        if(!pause){
+                            obj.accelerate(acc[0], acc[1], acc[2]);
+                        }
+                        
+                        
+
+                        
+                    }
+                }
+            }
+            if(obj.Initalizing){
+                obj.radius = pow(((3 * obj.mass/obj.density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 100000;
+                obj.UpdateVertices();
+            }
+
+            //update positions
+            if(!pause){
+                obj.UpdatePos();
+            }
+            
             glm::mat4 model = glm::mat4(1.0f);
             model = glm::translate(model, obj.position); // Apply position here
             glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
             glBindVertexArray(obj.VAO);
             glDrawArrays(GL_TRIANGLES, 0, obj.vertexCount / 3);
         }
+        
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
-    // glDeleteVertexArrays(1, &VAO);
-    // glDeleteBuffers(1, &VBO);
+    for (auto& obj : objs) {
+        glDeleteVertexArrays(1, &obj.VAO);
+        glDeleteBuffers(1, &obj.VBO);
+    }
+
+    glDeleteVertexArrays(1, &gridVAO);
+    glDeleteBuffers(1, &gridVBO);
+
     glDeleteProgram(shaderProgram);
+    glfwTerminate();
 
     glfwTerminate();
     return 0;
@@ -165,6 +279,8 @@ GLFWwindow* StartGLU() {
 
     glEnable(GL_DEPTH_TEST);
     glViewport(0, 0, 800, 600);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Standard blending for transparency
 
     return window;
 }
@@ -234,7 +350,10 @@ void UpdateCam(GLuint shaderProgram, glm::vec3 cameraPos) {
 }
 
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    float cameraSpeed = 4.5f * deltaTime;
+    float cameraSpeed = 100.0f * deltaTime;
+    bool shiftPressed = (mods & GLFW_MOD_SHIFT) != 0;
+    Object& lastObj = objs[objs.size() - 1];
+
     if (glfwGetKey(window, GLFW_KEY_W)==GLFW_PRESS){
         cameraPos += cameraSpeed * cameraFront;
     }
@@ -255,13 +374,48 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS){
         cameraPos -= cameraSpeed * cameraUp;
     }
+
+    if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS){
+        pause = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_K) == GLFW_RELEASE){
+        pause = false;
+    }
     
     if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS){
         glfwTerminate();
         glfwWindowShouldClose(window);
         running = false;
     }
-}
+
+    // init arrows pos up down left right
+    if(!objs.empty() && objs[objs.size() - 1].Initalizing){
+        if (key == GLFW_KEY_UP && (action == GLFW_PRESS || action == GLFW_REPEAT)){
+            if (!shiftPressed) {
+                objs[objs.size()-1].position[1] += 0.5;
+            }
+        };
+        if (key == GLFW_KEY_DOWN && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+            if (!shiftPressed) {
+                objs[objs.size()-1].position[1] -= 0.5;
+            }
+        }
+        if(key == GLFW_KEY_RIGHT && (action == GLFW_PRESS || action == GLFW_REPEAT)){
+            objs[objs.size()-1].position[0] += 0.5;
+        };
+        if(key == GLFW_KEY_LEFT && (action == GLFW_PRESS || action == GLFW_REPEAT)){
+            objs[objs.size()-1].position[0] -= 0.5;
+        };
+        if (key == GLFW_KEY_UP && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+            objs[objs.size()-1].position[2] += 0.5;
+        };
+
+        if (key == GLFW_KEY_DOWN && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+            objs[objs.size()-1].position[2] -= 0.5;
+        }
+    };
+    
+};
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
 
     float xoffset = xpos - lastX;
@@ -285,13 +439,95 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
     cameraFront = glm::normalize(front);
 }
+void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods){
+    if (button == GLFW_MOUSE_BUTTON_LEFT){
+        if (action == GLFW_PRESS){
+            objs.emplace_back(glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0f, 0.0f, 0.0f), initMass);
+            objs[objs.size()-1].Initalizing = true;
+        };
+        if (action == GLFW_RELEASE){
+            objs[objs.size()-1].Initalizing = false;
+            objs[objs.size()-1].Launched = true;
+        };
+    };
+    if (!objs.empty() && button == GLFW_MOUSE_BUTTON_RIGHT && objs[objs.size()-1].Initalizing) {
+        if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+            objs[objs.size()-1].mass *= 1.2;}
+    }
+};
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset){
+    float cameraSpeed = 5000.0f * deltaTime;
+    if(yoffset>0){
+        cameraPos += cameraSpeed * cameraFront;
+    } else if(yoffset<0){
+        cameraPos -= cameraSpeed * cameraFront;
+    }
+}
 
 glm::vec3 sphericalToCartesian(float r, float theta, float phi){
     float x = r * sin(theta) * cos(phi);
     float y = r * cos(theta);
     float z = r * sin(theta) * sin(phi);
     return glm::vec3(x, y, z);
+};
+void DrawGrid(GLuint shaderProgram, GLuint gridVAO, size_t vertexCount) {
+    glUseProgram(shaderProgram);
+    glm::mat4 model = glm::mat4(1.0f); // Identity matrix for the grid
+    GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+    glBindVertexArray(gridVAO);
+    glDrawArrays(GL_LINES, 0, vertexCount / 3);
+    glBindVertexArray(0);
 }
+std::vector<float> CreateGridVertices(float size, int divisions) {
+    std::vector<float> vertices;
+    float step = size / divisions;
+    float halfSize = size / 2.0f;
+
+    // Generate grid lines along the X-axis (Y-Z plane)
+    for (int i = 0; i <= divisions; ++i) {
+        float y = -halfSize + i * step;
+        for (int j = 0; j <= divisions; ++j) {
+            float z = -halfSize + j * step;
+            vertices.push_back(-halfSize); vertices.push_back(y); vertices.push_back(z);
+            vertices.push_back(halfSize);  vertices.push_back(y); vertices.push_back(z);
+        }
+    }
+
+    // Generate grid lines along the Y-axis (X-Z plane)
+    for (int i = 0; i <= divisions; ++i) {
+        float x = -halfSize + i * step;
+        for (int j = 0; j <= divisions; ++j) {
+            float z = -halfSize + j * step;
+            vertices.push_back(x); vertices.push_back(-halfSize); vertices.push_back(z);
+            vertices.push_back(x); vertices.push_back(halfSize);  vertices.push_back(z);
+        }
+    }
+
+    // Generate grid lines along the Z-axis (X-Y plane)
+    for (int i = 0; i <= divisions; ++i) {
+        float x = -halfSize + i * step;
+        for (int j = 0; j <= divisions; ++j) {
+            float y = -halfSize + j * step;
+            vertices.push_back(x); vertices.push_back(y); vertices.push_back(-halfSize);
+            vertices.push_back(x); vertices.push_back(y); vertices.push_back(halfSize);
+        }
+    }
+
+    return vertices;
+}
+
+
+
+
+
+
+
+
+
+
+
 
 
 
