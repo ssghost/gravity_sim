@@ -144,7 +144,7 @@ class Object {
 std::vector<Object> objs = {};
 
 GLuint gridVAO, gridVBO;
-std::vector<float> gridVertices = CreateGridVertices(200.0f, 5); // 100x100 grid with 10 divisions
+std::vector<float> gridVertices = CreateGridVertices(200.0f, 4); // 100x100 grid with 10 divisions
 
 
 int main() {
@@ -167,8 +167,8 @@ int main() {
 
     
     objs = {
-        Object(glm::vec3(0, -10, 5), glm::vec3(0, 0, 0), initMass*5),
-        Object(glm::vec3(0, 10, -5), glm::vec3(0, 0, 0), initMass*5),
+        Object(glm::vec3(0, -50, 5), glm::vec3(15, 0, 0), initMass*15),
+        Object(glm::vec3(0, 50, -5), glm::vec3(-15, 0, 0), initMass*15),
 
     };
 
@@ -205,14 +205,19 @@ int main() {
                         std::vector<float> direction = {dx / distance, dy / distance, dz / distance};
                         distance *= 1000;
                         double Gforce = (G * obj.mass * obj2.mass) / (distance * distance);
-                        if(distance <= (obj.radius+obj2.radius)){
-                            Gforce = 0.0f;
-                        }
+                        
 
                         float acc1 = Gforce / obj.mass;
                         std::vector<float> acc = {direction[0] * acc1, direction[1]*acc1, direction[2]*acc1};
                         if(!pause){
                             obj.accelerate(acc[0], acc[1], acc[2]);
+                        }
+
+                        //collision
+                        if (distance < (obj.radius*1000 + obj2.radius*1000)) {
+                            obj.velocity *= -0.8;
+                            obj2.velocity *= -0.8;
+                            obj.mass *= 0.8;
                         }
                         
                         
@@ -350,7 +355,7 @@ void UpdateCam(GLuint shaderProgram, glm::vec3 cameraPos) {
 }
 
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    float cameraSpeed = 100.0f * deltaTime;
+    float cameraSpeed = 1000.0f * deltaTime;
     bool shiftPressed = (mods & GLFW_MOD_SHIFT) != 0;
     Object& lastObj = objs[objs.size() - 1];
 
@@ -513,6 +518,26 @@ std::vector<float> CreateGridVertices(float size, int divisions) {
             vertices.push_back(x); vertices.push_back(y); vertices.push_back(-halfSize);
             vertices.push_back(x); vertices.push_back(y); vertices.push_back(halfSize);
         }
+    }
+    const float k = 0.1f; // Scaling factor for curvature strength
+    for (size_t i = 0; i < vertices.size(); i += 3) {
+        glm::vec3 vertexPos(vertices[i], vertices[i+1], vertices[i+2]);
+        glm::vec3 displacement(0.0f);
+
+        // Calculate displacement from all objects
+        for (auto& obj : objs) {
+            glm::vec3 dir = obj.GetPos() - vertexPos;
+            float distance = glm::length(dir);
+            if (distance > 0.0f) {
+                displacement += (obj.mass / (distance * distance)) * glm::normalize(dir);
+            }
+        }
+
+        // Apply displacement and update the vertex
+        vertexPos += displacement * k;
+        vertices[i]   = vertexPos.x;
+        vertices[i+1] = vertexPos.y;
+        vertices[i+2] = vertexPos.z;
     }
 
     return vertices;
