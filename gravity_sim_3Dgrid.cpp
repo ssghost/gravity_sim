@@ -211,7 +211,7 @@ int main() {
         glBufferData(GL_ARRAY_BUFFER, gridVertices.size() * sizeof(float), gridVertices.data(), GL_DYNAMIC_DRAW);
         DrawGrid(shaderProgram, gridVAO, gridVertices.size());
 
-        // Draw the triangle
+        // Draw the triangles for sphere
         for(auto& obj : objs) {
             glUniform4f(objectColorLoc, obj.color.r, obj.color.g, obj.color.b, obj.color.a);
 
