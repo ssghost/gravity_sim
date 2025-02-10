@@ -31,6 +31,7 @@ float deltaTime = 0.0;
 float lastFrame = 0.0;
 
 const double G = 6.6743e-11; // m^3 kg^-1 s^-2
+const float c = 299792458.0;
 float initMass = 5.0f * pow(10, 20) / 5;
 
 GLFWwindow* StartGLU();
@@ -206,12 +207,12 @@ int main() {
         // Draw the grid
         glUseProgram(shaderProgram);
         glUniform4f(objectColorLoc, 1.0f, 1.0f, 1.0f, 0.25f); // White color with 50% transparency for the grid
-        gridVertices = CreateGridVertices(200.0f, 5, objs);
+        gridVertices = CreateGridVertices(200.0f, 50, objs);
         glBindBuffer(GL_ARRAY_BUFFER, gridVBO);
         glBufferData(GL_ARRAY_BUFFER, gridVertices.size() * sizeof(float), gridVertices.data(), GL_DYNAMIC_DRAW);
         DrawGrid(shaderProgram, gridVAO, gridVertices.size());
 
-        // Draw the triangles for sphere
+        // Draw the triangle
         for(auto& obj : objs) {
             glUniform4f(objectColorLoc, obj.color.r, obj.color.g, obj.color.b, obj.color.a);
 
@@ -511,8 +512,8 @@ std::vector<float> CreateGridVertices(float size, int divisions, const std::vect
     float halfSize = size / 2.0f;
 
     // x axis
-    for (int yStep = 0; yStep <= divisions; ++yStep) {
-        float y = -halfSize + yStep * step;
+    for (int yStep = 3; yStep <= 3; ++yStep) {
+        float y = -halfSize*0.3f + yStep * step;
         for (int zStep = 0; zStep <= divisions; ++zStep) {
             float z = -halfSize + zStep * step;
             for (int xStep = 0; xStep < divisions; ++xStep) {
@@ -524,25 +525,25 @@ std::vector<float> CreateGridVertices(float size, int divisions, const std::vect
         }
     }
 
-    // yzxis
-    for (int xStep = 0; xStep <= divisions; ++xStep) {
-        float x = -halfSize + xStep * step;
-        for (int zStep = 0; zStep <= divisions; ++zStep) {
-            float z = -halfSize + zStep * step;
-            for (int yStep = 0; yStep < divisions; ++yStep) {
-                float yStart = -halfSize + yStep * step;
-                float yEnd = yStart + step;
-                vertices.push_back(x); vertices.push_back(yStart); vertices.push_back(z);
-                vertices.push_back(x); vertices.push_back(yEnd);   vertices.push_back(z);
-            }
-        }
-    }
+    // // yzxis
+    // for (int xStep = 0; xStep <= divisions; ++xStep) {
+    //     float x = -halfSize + xStep * step;
+    //     for (int zStep = 0; zStep <= divisions; ++zStep) {
+    //         float z = -halfSize + zStep * step;s
+    //         for (int yStep = 0; yStep < divisions; ++yStep) {
+    //             float yStart = -halfSize + yStep * step;
+    //             float yEnd = yStart + step;
+    //             vertices.push_back(x); vertices.push_back(yStart); vertices.push_back(z);
+    //             vertices.push_back(x); vertices.push_back(yEnd);   vertices.push_back(z);
+    //         }
+    //     }
+    // }
 
     // zaxis
     for (int xStep = 0; xStep <= divisions; ++xStep) {
         float x = -halfSize + xStep * step;
-        for (int yStep = 0; yStep <= divisions; ++yStep) {
-            float y = -halfSize + yStep * step;
+        for (int yStep = 3; yStep <= 3; ++yStep) {
+            float y = -halfSize*0.3f + yStep * step;
             for (int zStep = 0; zStep < divisions; ++zStep) {
                 float zStart = -halfSize + zStep * step;
                 float zEnd = zStart + step;
@@ -552,9 +553,32 @@ std::vector<float> CreateGridVertices(float size, int divisions, const std::vect
         }
     }
     
-    const float k = 0.01f;
 
     // displacement
+    // for (int i = 0; i < vertices.size(); i += 3) {
+    //     glm::vec3 vertexPos(vertices[i], vertices[i+1], vertices[i+2]);
+    //     glm::vec3 totalDisplacement(0.0f);
+
+    //     for (const auto& obj : objs) {
+    //         glm::vec3 toObject = obj.GetPos() - vertexPos;
+    //         float distance = glm::length(toObject);
+
+    //         float distance_m = distance * 1000.0f;
+            
+    //         float strength = (G * obj.mass) / (distance_m * distance_m);
+    //         glm::vec3 displacement = glm::normalize(toObject) * strength;
+
+    //         totalDisplacement += -displacement * (2/distance);
+    //     }
+
+    //     vertexPos += totalDisplacement; 
+
+    //     // Update vertex data
+    //     vertices[i]   = vertexPos[0];
+    //     vertices[i+1] = vertexPos[1];
+    //     vertices[i+2] = vertexPos[2];
+    // }
+
     for (int i = 0; i < vertices.size(); i += 3) {
         glm::vec3 vertexPos(vertices[i], vertices[i+1], vertices[i+2]);
         glm::vec3 totalDisplacement(0.0f);
@@ -563,24 +587,20 @@ std::vector<float> CreateGridVertices(float size, int divisions, const std::vect
             glm::vec3 toObject = obj.GetPos() - vertexPos;
             float distance = glm::length(toObject);
 
-            float distance_m = distance * 1000.0f; 
-//glm::min(4.60051e21f, obj.mass)
-            float strength = (G * obj.mass) / (distance_m * distance_m);
-            glm::vec3 displacement = glm::normalize(toObject) * strength;
+            float distance_m = distance * 1000.0f;
+            float rs = (2*G*obj.mass)/(c*c);
 
-            //std::cout<<"distanceofv: "<<glm::length(toObject) + glm::length(displacement)<<" radius: "<<obj.radius<<std::endl;
-            float maxDisplacement = 0.1f * distance;
-            if (!glm::length(toObject) + glm::length(displacement) < obj.radius*1000){
-                totalDisplacement += displacement * (2/distance);
-            }
+            float z = 2 * sqrt(rs*(distance_m - rs)) * 100.0f;
+            totalDisplacement += z;
+
         }
 
         vertexPos += totalDisplacement; 
 
         // Update vertex data
-        vertices[i]   = vertexPos[0];
-        vertices[i+1] = vertexPos[1];
-        vertices[i+2] = vertexPos[2];
+        // vertices[i]   = vertexPos[0];
+         vertices[i+1] = vertexPos[2] / 10.0f - 20.0f;
+        // vertices[i+2] = vertexPos[2] / 100;
     }
 
     return vertices;
