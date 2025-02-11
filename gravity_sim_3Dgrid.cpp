@@ -60,16 +60,18 @@ class Object {
         bool target = false;
 
         float mass;
-        float density = 3344;  // kg / m^3  HYDROGEN
+        float density;  // kg / m^3  HYDROGEN
         float radius;
 
         glm::vec3 LastPos = position;
 
-        Object(glm::vec3 initPosition, glm::vec3 initVelocity, float mass) {   
+        Object(glm::vec3 initPosition, glm::vec3 initVelocity, float mass, float density = 3344) {   
             this->position = initPosition;
             this->velocity = initVelocity;
             this->mass = mass;
+            this->density = density;
             this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 100000;
+            
 
             // Generate vertices (centered at origin)
             std::vector<float> vertices = Draw();
@@ -135,9 +137,9 @@ class Object {
             float dx = other.position[0] - this->position[0];
             float dy = other.position[1] - this->position[1];
             float dz = other.position[2] - this->position[2];
-            float distance = std::pow(dx*dx + dy*dy + dz*dz, (1.0f/3.0f));
-            if (other.radius> distance){
-                return -0.8f;
+            float distance = std::pow(dx*dx + dy*dy + dz*dz, (1.0f/2.0f));
+            if (other.radius + this->radius > distance){
+                return -0.2f;
             }
             return 1.0f;
         }
@@ -162,20 +164,22 @@ int main() {
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     //projection matrix
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 1000.0f);
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 750000.0f);
     GLint projectionLoc = glGetUniformLocation(shaderProgram, "projection");
     glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-    cameraPos = glm::vec3(0.0f, 50.0f,  250.0f);
+    cameraPos = glm::vec3(0.0f, 1000.0f,  5000.0f);
 
     
     objs = {
-        Object(glm::vec3(50, 0, 0), glm::vec3(0, 0, 15), initMass*15),
-        Object(glm::vec3(-50, 0, 0), glm::vec3(0, 0, -15), initMass*15),
-       // Object(glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), initMass*15),
+        Object(glm::vec3(3844, 0, 0), glm::vec3(0, 0, 228), 7.34767309*pow(10, 22), 3344),
+        // Object(glm::vec3(-250, 0, 0), glm::vec3(0, -50, 0), 7.34767309*pow(10, 22), 3344),
+        Object(glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), 5.97219*pow(10, 24), 5515),
 
     };
-    std::vector<float> gridVertices = CreateGridVertices(1000.0f, 50, objs);
+    std::vector<float> gridVertices = CreateGridVertices(100000.0f, 50, objs);
     CreateVBOVAO(gridVAO, gridVBO, gridVertices.data(), gridVertices.size());
+    std::cout<<"Earth radius: "<<objs[1].radius<<std::endl;
+    std::cout<<"Moon radius: "<<objs[0].radius<<std::endl;
 
     while (!glfwWindowShouldClose(window) && running == true) {
         float currentFrame = glfwGetTime();
@@ -207,7 +211,7 @@ int main() {
         // Draw the grid
         glUseProgram(shaderProgram);
         glUniform4f(objectColorLoc, 1.0f, 1.0f, 1.0f, 0.25f); // White color with 50% transparency for the grid
-        gridVertices = CreateGridVertices(200.0f, 50, objs);
+        gridVertices = CreateGridVertices(10000.0f, 50, objs);
         glBindBuffer(GL_ARRAY_BUFFER, gridVBO);
         glBufferData(GL_ARRAY_BUFFER, gridVertices.size() * sizeof(float), gridVertices.data(), GL_DYNAMIC_DRAW);
         DrawGrid(shaderProgram, gridVAO, gridVertices.size());
@@ -237,10 +241,6 @@ int main() {
 
                         //collision
                         obj.velocity *= obj.CheckCollision(obj2);
-                        
-                        
-
-                        
                     }
                 }
             }
@@ -481,7 +481,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods){
     // }
 };
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset){
-    float cameraSpeed = 5000.0f * deltaTime;
+    float cameraSpeed = 50000.0f * deltaTime;
     if(yoffset>0){
         cameraPos += cameraSpeed * cameraFront;
     } else if(yoffset<0){
@@ -578,10 +578,11 @@ std::vector<float> CreateGridVertices(float size, int divisions, const std::vect
     //     vertices[i+1] = vertexPos[1];
     //     vertices[i+2] = vertexPos[2];
     // }
-
+    float minz = 0.0f;
     for (int i = 0; i < vertices.size(); i += 3) {
         glm::vec3 vertexPos(vertices[i], vertices[i+1], vertices[i+2]);
         glm::vec3 totalDisplacement(0.0f);
+        
 
         for (const auto& obj : objs) {
             glm::vec3 toObject = obj.GetPos() - vertexPos;
@@ -592,16 +593,15 @@ std::vector<float> CreateGridVertices(float size, int divisions, const std::vect
 
             float z = 2 * sqrt(rs*(distance_m - rs)) * 100.0f;
             totalDisplacement += z;
+            
 
         }
-
+        
         vertexPos += totalDisplacement; 
 
-        // Update vertex data
-        // vertices[i]   = vertexPos[0];
-         vertices[i+1] = vertexPos[2] / 10.0f - 20.0f;
-        // vertices[i+2] = vertexPos[2] / 100;
+         vertices[i+1] = vertexPos[1] / 15.0f - 3000.0f;
     }
+    
 
     return vertices;
 }
