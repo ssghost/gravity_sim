@@ -31,7 +31,8 @@ float deltaTime = 0.0;
 float lastFrame = 0.0;
 
 const double G = 6.6743e-11; // m^3 kg^-1 s^-2
-float initMass = 5.0f * pow(10, 20) / 5;
+const float c = 299792458.0;
+float initMass = float(pow(10, 22));
 
 GLFWwindow* StartGLU();
 GLuint CreateShaderProgram(const char* vertexSource, const char* fragmentSource);
@@ -43,8 +44,6 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 glm::vec3 sphericalToCartesian(float r, float theta, float phi);
-
-std::vector<float> CreateGridVertices(float size, int divisions);
 void DrawGrid(GLuint shaderProgram, GLuint gridVAO, size_t vertexCount);
 
 
@@ -61,16 +60,19 @@ class Object {
         bool target = false;
 
         float mass;
-        float density = 3344;  // kg / m^3  HYDROGEN
+        float density;  // kg / m^3  HYDROGEN
         float radius;
 
         glm::vec3 LastPos = position;
 
-        Object(glm::vec3 initPosition, glm::vec3 initVelocity, float mass) {   
+        Object(glm::vec3 initPosition, glm::vec3 initVelocity, float mass, float density = 3344, glm::vec4 color = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)) {   
             this->position = initPosition;
             this->velocity = initVelocity;
             this->mass = mass;
-            this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 100000;
+            this->density = density;
+            this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 10000;
+            this->color = color;
+            
 
             // Generate vertices (centered at origin)
             std::vector<float> vertices = Draw();
@@ -114,7 +116,7 @@ class Object {
             this->position[0] += this->velocity[0] / 94;
             this->position[1] += this->velocity[1] / 94;
             this->position[2] += this->velocity[2] / 94;
-            this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 100000;
+            this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 10000;
         }
         void UpdateVertices() {
             // Generate new vertices with current radius
@@ -124,7 +126,7 @@ class Object {
             glBindBuffer(GL_ARRAY_BUFFER, VBO);
             glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
         }
-        glm::vec3 GetPos(){
+        glm::vec3 GetPos() const {
             return this->position;
         }
         void accelerate(float x, float y, float z){
@@ -132,19 +134,23 @@ class Object {
             this->velocity[1] += y / 96;
             this->velocity[2] += z / 96;
         }
-        glm::vec3 CheckCollision(const Object& other) {
+        float CheckCollision(const Object& other) {
             float dx = other.position[0] - this->position[0];
             float dy = other.position[1] - this->position[1];
             float dz = other.position[2] - this->position[2];
-            float distance = std::pow(dx*dx + dy*dy + dz*dz, (1.0f/3.0f));
-
-            return glm::vec3(0, 0, 0);
+            float distance = std::pow(dx*dx + dy*dy + dz*dz, (1.0f/2.0f));
+            if (other.radius + this->radius > distance){
+                return -0.2f;
+            }
+            return 1.0f;
         }
 };
 std::vector<Object> objs = {};
 
+std::vector<float> CreateGridVertices(float size, int divisions, const std::vector<Object>& objs);
+std::vector<float> UpdateGridVertices(std::vector<float> vertices, const std::vector<Object>& objs);
+
 GLuint gridVAO, gridVBO;
-std::vector<float> gridVertices = CreateGridVertices(200.0f, 4); // 100x100 grid with 10 divisions
 
 
 int main() {
@@ -160,18 +166,19 @@ int main() {
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     //projection matrix
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 1000.0f);
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 750000.0f);
     GLint projectionLoc = glGetUniformLocation(shaderProgram, "projection");
     glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-    cameraPos = glm::vec3(0.0f, 50.0f,  250.0f);
+    cameraPos = glm::vec3(0.0f, 1000.0f, 5000.0f);
 
     
     objs = {
-        Object(glm::vec3(0, -50, 5), glm::vec3(15, 0, 0), initMass*15),
-        Object(glm::vec3(0, 50, -5), glm::vec3(-15, 0, 0), initMass*15),
+        //Object(glm::vec3(3844, 0, 0), glm::vec3(0, 0, 228), 7.34767309*pow(10, 22), 3344),
+        //Object(glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), 1.989 * pow(10, 30), 5515, glm::vec4(1.0f, 0.929f, 0.176f, 1.0f)),
+       //Object(glm::vec3(-50000, 0, 0), glm::vec3(0, 0, -200), 5.97219*pow(10, 29), 5515, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f)),
 
     };
-
+    std::vector<float> gridVertices = CreateGridVertices(20000.0f, 50, objs);
     CreateVBOVAO(gridVAO, gridVBO, gridVertices.data(), gridVertices.size());
 
     while (!glfwWindowShouldClose(window) && running == true) {
@@ -184,10 +191,29 @@ int main() {
         glfwSetKeyCallback(window, keyCallback);
         glfwSetMouseButtonCallback(window, mouseButtonCallback);
         UpdateCam(shaderProgram, cameraPos);
+        if (!objs.empty() && objs.back().Initalizing) {
+            if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+                // Increase mass by 1% per second
+                objs.back().mass *= 1.0 + 1.0 * deltaTime;
+                
+                // Update radius based on new mass
+                objs.back().radius = pow(
+                    (3 * objs.back().mass / objs.back().density) / 
+                    (4 * 3.14159265359f), 
+                    1.0f/3.0f
+                ) / 10000.0f;
+                
+                // Update vertex data
+                objs.back().UpdateVertices();
+            }
+        }
 
         // Draw the grid
         glUseProgram(shaderProgram);
         glUniform4f(objectColorLoc, 1.0f, 1.0f, 1.0f, 0.25f); // White color with 50% transparency for the grid
+        gridVertices = UpdateGridVertices(gridVertices, objs);
+        glBindBuffer(GL_ARRAY_BUFFER, gridVBO);
+        glBufferData(GL_ARRAY_BUFFER, gridVertices.size() * sizeof(float), gridVertices.data(), GL_DYNAMIC_DRAW);
         DrawGrid(shaderProgram, gridVAO, gridVertices.size());
 
         // Draw the triangle
@@ -214,20 +240,13 @@ int main() {
                         }
 
                         //collision
-                        if (distance < (obj.radius*1000 + obj2.radius*1000)) {
-                            obj.velocity *= -0.8;
-                            obj2.velocity *= -0.8;
-                            obj.mass *= 0.8;
-                        }
-                        
-                        
-
-                        
+                        obj.velocity *= obj.CheckCollision(obj2);
+                        std::cout<<"radius: "<<obj.radius<<std::endl;
                     }
                 }
             }
             if(obj.Initalizing){
-                obj.radius = pow(((3 * obj.mass/obj.density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 100000;
+                obj.radius = pow(((3 * obj.mass/obj.density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 1000000;
                 obj.UpdateVertices();
             }
 
@@ -355,9 +374,10 @@ void UpdateCam(GLuint shaderProgram, glm::vec3 cameraPos) {
 }
 
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    float cameraSpeed = 1000.0f * deltaTime;
+    float cameraSpeed = 10000.0f * deltaTime;
     bool shiftPressed = (mods & GLFW_MOD_SHIFT) != 0;
     Object& lastObj = objs[objs.size() - 1];
+    
 
     if (glfwGetKey(window, GLFW_KEY_W)==GLFW_PRESS){
         cameraPos += cameraSpeed * cameraFront;
@@ -397,26 +417,26 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     if(!objs.empty() && objs[objs.size() - 1].Initalizing){
         if (key == GLFW_KEY_UP && (action == GLFW_PRESS || action == GLFW_REPEAT)){
             if (!shiftPressed) {
-                objs[objs.size()-1].position[1] += 0.5;
+                objs[objs.size()-1].position[1] += objs[objs.size() - 1].radius * 0.2;
             }
         };
         if (key == GLFW_KEY_DOWN && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
             if (!shiftPressed) {
-                objs[objs.size()-1].position[1] -= 0.5;
+                objs[objs.size()-1].position[1] -= objs[objs.size() - 1].radius * 0.2;
             }
         }
         if(key == GLFW_KEY_RIGHT && (action == GLFW_PRESS || action == GLFW_REPEAT)){
-            objs[objs.size()-1].position[0] += 0.5;
+            objs[objs.size()-1].position[0] += objs[objs.size() - 1].radius * 0.2;
         };
         if(key == GLFW_KEY_LEFT && (action == GLFW_PRESS || action == GLFW_REPEAT)){
-            objs[objs.size()-1].position[0] -= 0.5;
+            objs[objs.size()-1].position[0] -= objs[objs.size() - 1].radius * 0.2;
         };
         if (key == GLFW_KEY_UP && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
-            objs[objs.size()-1].position[2] += 0.5;
+            objs[objs.size()-1].position[2] += objs[objs.size() - 1].radius * 0.2;
         };
 
         if (key == GLFW_KEY_DOWN && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
-            objs[objs.size()-1].position[2] -= 0.5;
+            objs[objs.size()-1].position[2] -= objs[objs.size() - 1].radius * 0.2;
         }
     };
     
@@ -458,10 +478,11 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods){
     if (!objs.empty() && button == GLFW_MOUSE_BUTTON_RIGHT && objs[objs.size()-1].Initalizing) {
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
             objs[objs.size()-1].mass *= 1.2;}
+            std::cout<<"MASS: "<<objs[objs.size()-1].mass<<std::endl;
     }
 };
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset){
-    float cameraSpeed = 5000.0f * deltaTime;
+    float cameraSpeed = 250000.0f * deltaTime;
     if(yoffset>0){
         cameraPos += cameraSpeed * cameraFront;
     } else if(yoffset<0){
@@ -482,68 +503,89 @@ void DrawGrid(GLuint shaderProgram, GLuint gridVAO, size_t vertexCount) {
     glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 
     glBindVertexArray(gridVAO);
+    glPointSize(5.0f);
     glDrawArrays(GL_LINES, 0, vertexCount / 3);
     glBindVertexArray(0);
 }
-std::vector<float> CreateGridVertices(float size, int divisions) {
+std::vector<float> CreateGridVertices(float size, int divisions, const std::vector<Object>& objs) {
     std::vector<float> vertices;
     float step = size / divisions;
     float halfSize = size / 2.0f;
 
-    // Generate grid lines along the X-axis (Y-Z plane)
-    for (int i = 0; i <= divisions; ++i) {
-        float y = -halfSize + i * step;
-        for (int j = 0; j <= divisions; ++j) {
-            float z = -halfSize + j * step;
-            vertices.push_back(-halfSize); vertices.push_back(y); vertices.push_back(z);
-            vertices.push_back(halfSize);  vertices.push_back(y); vertices.push_back(z);
-        }
-    }
-
-    // Generate grid lines along the Y-axis (X-Z plane)
-    for (int i = 0; i <= divisions; ++i) {
-        float x = -halfSize + i * step;
-        for (int j = 0; j <= divisions; ++j) {
-            float z = -halfSize + j * step;
-            vertices.push_back(x); vertices.push_back(-halfSize); vertices.push_back(z);
-            vertices.push_back(x); vertices.push_back(halfSize);  vertices.push_back(z);
-        }
-    }
-
-    // Generate grid lines along the Z-axis (X-Y plane)
-    for (int i = 0; i <= divisions; ++i) {
-        float x = -halfSize + i * step;
-        for (int j = 0; j <= divisions; ++j) {
-            float y = -halfSize + j * step;
-            vertices.push_back(x); vertices.push_back(y); vertices.push_back(-halfSize);
-            vertices.push_back(x); vertices.push_back(y); vertices.push_back(halfSize);
-        }
-    }
-    const float k = 0.1f; // Scaling factor for curvature strength
-    for (size_t i = 0; i < vertices.size(); i += 3) {
-        glm::vec3 vertexPos(vertices[i], vertices[i+1], vertices[i+2]);
-        glm::vec3 displacement(0.0f);
-
-        // Calculate displacement from all objects
-        for (auto& obj : objs) {
-            glm::vec3 dir = obj.GetPos() - vertexPos;
-            float distance = glm::length(dir);
-            if (distance > 0.0f) {
-                displacement += (obj.mass / (distance * distance)) * glm::normalize(dir);
+    // x axis
+    for (int yStep = 3; yStep <= 3; ++yStep) {
+        float y = -halfSize*0.3f + yStep * step;
+        for (int zStep = 0; zStep <= divisions; ++zStep) {
+            float z = -halfSize + zStep * step;
+            for (int xStep = 0; xStep < divisions; ++xStep) {
+                float xStart = -halfSize + xStep * step;
+                float xEnd = xStart + step;
+                vertices.push_back(xStart); vertices.push_back(y); vertices.push_back(z);
+                vertices.push_back(xEnd);   vertices.push_back(y); vertices.push_back(z);
             }
         }
-
-        // Apply displacement and update the vertex
-        vertexPos += displacement * k;
-        vertices[i]   = vertexPos.x;
-        vertices[i+1] = vertexPos.y;
-        vertices[i+2] = vertexPos.z;
     }
+    // zaxis
+    for (int xStep = 0; xStep <= divisions; ++xStep) {
+        float x = -halfSize + xStep * step;
+        for (int yStep = 3; yStep <= 3; ++yStep) {
+            float y = -halfSize*0.3f + yStep * step;
+            for (int zStep = 0; zStep < divisions; ++zStep) {
+                float zStart = -halfSize + zStep * step;
+                float zEnd = zStart + step;
+                vertices.push_back(x); vertices.push_back(y); vertices.push_back(zStart);
+                vertices.push_back(x); vertices.push_back(y); vertices.push_back(zEnd);
+            }
+        }
+    }
+
+    
 
     return vertices;
 }
+std::vector<float> UpdateGridVertices(std::vector<float> vertices, const std::vector<Object>& objs){
+    
+    // centre of mass calc
+    float totalMass = 0.0f;
+    float comY = 0.0f;
+    for (const auto& obj : objs) {
+        if (obj.Initalizing) continue;
+        comY += obj.mass * obj.position.y;
+        totalMass += obj.mass;
+    }
+    if (totalMass > 0) comY /= totalMass;
+    
+    float originalMaxY = -std::numeric_limits<float>::infinity();
+    for (int i = 0; i < vertices.size(); i += 3) {
+        originalMaxY = std::max(originalMaxY, vertices[i+1]);
+    }
+    std::cout<<"maxy: "<<originalMaxY<<std::endl;
+
+    float verticalShift = comY - originalMaxY;
 
 
+    for (int i = 0; i < vertices.size(); i += 3) {
+        vertices[i+1] += verticalShift;
+        // mass bending space
+        glm::vec3 vertexPos(vertices[i], vertices[i+1], vertices[i+2]);
+        glm::vec3 totalDisplacement(0.0f);
+        for (const auto& obj : objs) {
+            //f (obj.Initalizing) continue;
+
+            glm::vec3 toObject = obj.GetPos() - vertexPos;
+            float distance = glm::length(toObject);
+            float distance_m = distance * 1000.0f;
+            float rs = (2*G*obj.mass)/(c*c);
+
+            float dz = 2 * sqrt(rs * (distance_m - rs));
+            totalDisplacement.y += dz;
+        }
+        
+        //vertexPos += totalDisplacement; 
+        vertices[i+1] = totalDisplacement.y;
+    }
+    return vertices;
+}
 
 
 
