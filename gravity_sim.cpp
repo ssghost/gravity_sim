@@ -6,21 +6,41 @@
 #include <vector>
 #include <iostream>
 
-const char* vertexShaderSource = R"glsl(#version 330 core
-layout(location=0)in vec3 aPos;uniform mat4 model;uniform mat4 view;uniform mat4 projection;
-void main(){gl_Position=projection*view*model*vec4(aPos,1.0);})glsl";
+const char* vertexShaderSource = R"glsl(
+#version 330 core
+layout(location=0) in vec3 aPos;
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+out float lightIntensity;
+void main() {
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
+    vec3 worldPos = (model * vec4(aPos, 1.0)).xyz;
+    vec3 normal = normalize(aPos);
+    vec3 dirToCenter = normalize(-worldPos);
+    lightIntensity = max(dot(normal, dirToCenter), 0.15);})glsl";
 
 const char* fragmentShaderSource = R"glsl(
 #version 330 core
+in float lightIntensity;
 out vec4 FragColor;
-uniform vec4 objectColor; // Add this uniform
+uniform vec4 objectColor;
+uniform bool isGrid; // Add this uniform
+uniform bool GLOW;
 void main() {
-    FragColor = objectColor; // Use the uniform color
-}
-)glsl";
+    if (isGrid) {
+        // If it's the grid, use the original color without lighting
+        FragColor = objectColor;
+    } else if(GLOW){
+        FragColor = vec4(objectColor.rgb * 100000, objectColor.a);
+    }else {
+        // If it's an object, apply the lighting effect
+        float fade = smoothstep(0.0, 10.0, lightIntensity*10);
+        FragColor = vec4(objectColor.rgb * fade, objectColor.a);
+    }})glsl";
 
 bool running = true;
-bool pause = false;
+bool pause = true;
 glm::vec3 cameraPos   = glm::vec3(0.0f, 0.0f,  1.0f);
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
 glm::vec3 cameraUp    = glm::vec3(0.0f, 1.0f,  0.0f);
@@ -33,6 +53,7 @@ float lastFrame = 0.0;
 const double G = 6.6743e-11; // m^3 kg^-1 s^-2
 const float c = 299792458.0;
 float initMass = float(pow(10, 22));
+float sizeRatio = 30000.0f;
 
 GLFWwindow* StartGLU();
 GLuint CreateShaderProgram(const char* vertexSource, const char* fragmentSource);
@@ -64,14 +85,16 @@ class Object {
         float radius;
 
         glm::vec3 LastPos = position;
+        bool glow;
 
-        Object(glm::vec3 initPosition, glm::vec3 initVelocity, float mass, float density = 3344, glm::vec4 color = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)) {   
+        Object(glm::vec3 initPosition, glm::vec3 initVelocity, float mass, float density = 3344, glm::vec4 color = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f), bool Glow = false) {   
             this->position = initPosition;
             this->velocity = initVelocity;
             this->mass = mass;
             this->density = density;
-            this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 10000;
+            this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / sizeRatio;
             this->color = color;
+            this->glow = Glow;
             
 
             // Generate vertices (centered at origin)
@@ -93,10 +116,10 @@ class Object {
                 for (float j = 0.0f; j < sectors; ++j){
                     float phi1 = j / sectors * 2 * glm::pi<float>();
                     float phi2 = (j+1) / sectors * 2 * glm::pi<float>();
-                    glm::vec3 v1 = sphericalToCartesian(radius, theta1, phi1);
-                    glm::vec3 v2 = sphericalToCartesian(radius, theta1, phi2);
-                    glm::vec3 v3 = sphericalToCartesian(radius, theta2, phi1);
-                    glm::vec3 v4 = sphericalToCartesian(radius, theta2, phi2);
+                    glm::vec3 v1 = sphericalToCartesian(this->radius, theta1, phi1);
+                    glm::vec3 v2 = sphericalToCartesian(this->radius, theta1, phi2);
+                    glm::vec3 v3 = sphericalToCartesian(this->radius, theta2, phi1);
+                    glm::vec3 v4 = sphericalToCartesian(this->radius, theta2, phi2);
 
                     // Triangle 1: v1-v2-v3
                     vertices.insert(vertices.end(), {v1.x, v1.y, v1.z}); //      /|
@@ -116,7 +139,7 @@ class Object {
             this->position[0] += this->velocity[0] / 94;
             this->position[1] += this->velocity[1] / 94;
             this->position[2] += this->velocity[2] / 94;
-            this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / 10000;
+            this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / sizeRatio;
         }
         void UpdateVertices() {
             // Generate new vertices with current radius
@@ -175,10 +198,13 @@ int main() {
     objs = {
         //Object(glm::vec3(3844, 0, 0), glm::vec3(0, 0, 228), 7.34767309*pow(10, 22), 3344),
         //Object(glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), 1.989 * pow(10, 30), 5515, glm::vec4(1.0f, 0.929f, 0.176f, 1.0f)),
-       //Object(glm::vec3(-50000, 0, 0), glm::vec3(0, 0, -200), 5.97219*pow(10, 29), 5515, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f)),
+       //Object(glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), 5.97219*pow(10, 24), 5515, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f)),
+       Object(glm::vec3(-5000, 650, -350), glm::vec3(0, 0, 1500), 5.97219*pow(10, 22), 5515, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f)),
+       Object(glm::vec3(5000, 650, -350), glm::vec3(0, 0, -1500), 5.97219*pow(10, 22), 5515, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f)),
+       Object(glm::vec3(0, 0, -350), glm::vec3(0, 0, 0), 1.989 * pow(10, 25), 5515, glm::vec4(1.0f, 0.929f, 0.176f, 1.0f), true),
 
     };
-    std::vector<float> gridVertices = CreateGridVertices(20000.0f, 50, objs);
+    std::vector<float> gridVertices = CreateGridVertices(20000.0f, 25, objs);
     CreateVBOVAO(gridVAO, gridVBO, gridVertices.data(), gridVertices.size());
 
     while (!glfwWindowShouldClose(window) && running == true) {
@@ -201,7 +227,7 @@ int main() {
                     (3 * objs.back().mass / objs.back().density) / 
                     (4 * 3.14159265359f), 
                     1.0f/3.0f
-                ) / 10000.0f;
+                ) / sizeRatio;
                 
                 // Update vertex data
                 objs.back().UpdateVertices();
@@ -210,13 +236,15 @@ int main() {
 
         // Draw the grid
         glUseProgram(shaderProgram);
-        glUniform4f(objectColorLoc, 1.0f, 1.0f, 1.0f, 0.25f); // White color with 50% transparency for the grid
+        glUniform4f(objectColorLoc, 1.0f, 1.0f, 1.0f, 0.25f);
+        glUniform1i(glGetUniformLocation(shaderProgram, "isGrid"), 1);
+        glUniform1i(glGetUniformLocation(shaderProgram, "GLOW"), 0);
         gridVertices = UpdateGridVertices(gridVertices, objs);
         glBindBuffer(GL_ARRAY_BUFFER, gridVBO);
         glBufferData(GL_ARRAY_BUFFER, gridVertices.size() * sizeof(float), gridVertices.data(), GL_DYNAMIC_DRAW);
         DrawGrid(shaderProgram, gridVAO, gridVertices.size());
 
-        // Draw the triangle
+        // Draw the triangles / sphere
         for(auto& obj : objs) {
             glUniform4f(objectColorLoc, obj.color.r, obj.color.g, obj.color.b, obj.color.a);
 
@@ -258,6 +286,13 @@ int main() {
             glm::mat4 model = glm::mat4(1.0f);
             model = glm::translate(model, obj.position); // Apply position here
             glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+            glUniform1i(glGetUniformLocation(shaderProgram, "isGrid"), 0);
+            if(obj.glow){
+                glUniform1i(glGetUniformLocation(shaderProgram, "GLOW"), 1);
+            } else {
+                glUniform1i(glGetUniformLocation(shaderProgram, "GLOW"), 0);
+            }
+            
             glBindVertexArray(obj.VAO);
             glDrawArrays(GL_TRIANGLES, 0, obj.vertexCount / 3);
         }
@@ -559,13 +594,13 @@ std::vector<float> UpdateGridVertices(std::vector<float> vertices, const std::ve
     for (int i = 0; i < vertices.size(); i += 3) {
         originalMaxY = std::max(originalMaxY, vertices[i+1]);
     }
-    std::cout<<"maxy: "<<originalMaxY<<std::endl;
 
     float verticalShift = comY - originalMaxY;
+    std::cout<<"vertical shift: "<<verticalShift<<" |         comY: "<<comY<<"|            originalmaxy: "<<originalMaxY<<std::endl;
 
 
     for (int i = 0; i < vertices.size(); i += 3) {
-        vertices[i+1] += verticalShift;
+
         // mass bending space
         glm::vec3 vertexPos(vertices[i], vertices[i+1], vertices[i+2]);
         glm::vec3 totalDisplacement(0.0f);
@@ -578,12 +613,11 @@ std::vector<float> UpdateGridVertices(std::vector<float> vertices, const std::ve
             float rs = (2*G*obj.mass)/(c*c);
 
             float dz = 2 * sqrt(rs * (distance_m - rs));
-            totalDisplacement.y += dz;
+            totalDisplacement.y += dz * 2.0f;
         }
-        
-        //vertexPos += totalDisplacement; 
-        vertices[i+1] = totalDisplacement.y;
+        vertices[i+1] = totalDisplacement.y + -abs(verticalShift);
     }
+
     return vertices;
 }
 
