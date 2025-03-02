@@ -97,7 +97,7 @@ class Object {
             this->glow = Glow;
             
 
-            // Generate vertices (centered at origin)
+            // generate vertices (centered at origin)
             std::vector<float> vertices = Draw();
             vertexCount = vertices.size();
 
@@ -109,7 +109,7 @@ class Object {
             int stacks = 10;
             int sectors = 10;
 
-            // Generate circumference points using integer steps
+            // generate circumference points using integer steps
             for(float i = 0.0f; i <= stacks; ++i){
                 float theta1 = (i / stacks) * glm::pi<float>();
                 float theta2 = (i+1) / stacks * glm::pi<float>();
@@ -142,10 +142,10 @@ class Object {
             this->radius = pow(((3 * this->mass/this->density)/(4 * 3.14159265359)), (1.0f/3.0f)) / sizeRatio;
         }
         void UpdateVertices() {
-            // Generate new vertices with current radius
+            // generate new vertices with current radius
             std::vector<float> vertices = Draw();
             
-            // Update the VBO with new vertex data
+            // update VBO with new vertex data
             glBindBuffer(GL_ARRAY_BUFFER, VBO);
             glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
         }
@@ -219,17 +219,17 @@ int main() {
         UpdateCam(shaderProgram, cameraPos);
         if (!objs.empty() && objs.back().Initalizing) {
             if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
-                // Increase mass by 1% per second
+                // increase mass by 1% per second
                 objs.back().mass *= 1.0 + 1.0 * deltaTime;
                 
-                // Update radius based on new mass
+                // update radius based on new mass
                 objs.back().radius = pow(
                     (3 * objs.back().mass / objs.back().density) / 
                     (4 * 3.14159265359f), 
                     1.0f/3.0f
                 ) / sizeRatio;
                 
-                // Update vertex data
+                // update vertex data
                 objs.back().UpdateVertices();
             }
         }
@@ -284,7 +284,7 @@ int main() {
             }
             
             glm::mat4 model = glm::mat4(1.0f);
-            model = glm::translate(model, obj.position); // Apply position here
+            model = glm::translate(model, obj.position); // apply position
             glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
             glUniform1i(glGetUniformLocation(shaderProgram, "isGrid"), 0);
             if(obj.glow){
@@ -339,7 +339,7 @@ GLFWwindow* StartGLU() {
     glEnable(GL_DEPTH_TEST);
     glViewport(0, 0, 800, 600);
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Standard blending for transparency
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     return window;
 }
